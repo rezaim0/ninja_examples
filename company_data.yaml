@@ -1,0 +1,54 @@
+# Input YAML data
+company:
+  name: ABC Inc.
+  departments:
+    IT:
+      employees:
+        - name: Alice
+          age: 30
+          skills:
+            - Python
+            - Java
+        - name: Bob
+          age: 35
+          skills:
+            - C++
+            - SQL
+    HR:
+      employees:
+        - name: Charlie
+          age: 40
+          skills:
+            - Communication
+## =========== The above data can be represented as: =========
+# Python equivalent
+# {
+#     'company': {
+#         'name': 'ABC Inc.',
+#         'departments': {
+#             'IT': {
+#                 'employees': [
+#                     {
+#                         'name': 'Alice',
+#                         'age': 30,
+#                         'skills': ['Python', 'Java']
+#                     },
+#                     {
+#                         'name': 'Bob',
+#                         'age': 35,
+#                         'skills': ['C++', 'SQL']
+#                     }
+#                 ]
+#             },
+#             'HR': {
+#                 'employees': [
+#                     {
+#                         'name': 'Charlie',
+#                         'age': 40,
+#                         'skills': ['Communication']
+#                     }
+#                 ]
+#             }
+#         }
+#     }
+# }
