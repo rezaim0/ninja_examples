@@ -1,0 +1,29 @@
+title: Three-Layer Markdown Document
+author: Mohammad Rezai
+date: 2024-05-15
+sections:
+  - title: Introduction
+    content: This is the introduction section.
+    subsections:
+      - title: Background
+        content: Background information.
+      - title: Scope
+        content: Scope of the document.
+  - title: Main Content
+    content: This is the main content section.
+    subsections:
+      - title: Details
+        points:
+          - point: Detail point 1.
+          - point: Detail point 2.
+      - title: Analysis
+        points:
+          - point: Analysis point 1.
+          - point: Analysis point 2.
+  - title: Conclusion
+    content: This is the conclusion section.
+    acknowledgements:
+      - name: Dave
+        contribution: Proofreading.
+      - name: Eve
+        contribution: Feedback.

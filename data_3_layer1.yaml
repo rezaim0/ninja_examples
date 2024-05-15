@@ -1,0 +1,21 @@
+# 3 nested structure
+food:  
+  fruits: 
+    citrics: oranges  
+    tropical: 
+      type1: bananas
+      type2: pineapples
+
+# The python structure of the above:
+
+# data = {
+#     "food": {
+#         "fruits": {
+#             "citrics": "oranges",
+#             "tropical": {
+#                 "type1": "bananas",
+#                 "type2": "pineapples"
+#             }
+#         }
+#     }
+# }
