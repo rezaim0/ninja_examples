@@ -1,6 +1,3 @@
-#####################################################################################
-############################### This is Iteration 2 ###############################################
-####################################################################################
 import os
 import yaml
 import logging
@@ -11,6 +8,13 @@ from typing import Any, Dict, Generator, Tuple, List
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class MarkdownGenerator:
+    """
+    A class for generating Markdown files from YAML data using Jinja2 templates.
+
+    This class processes YAML files in a specified directory, renders them using
+    a Jinja2 template, and outputs the result as Markdown files.
+    """
+
     YAML_EXTENSION = '.yaml'
     MARKDOWN_EXTENSION = '.md'
 
@@ -18,8 +22,9 @@ class MarkdownGenerator:
         """
         Initialize the MarkdownGenerator with the directory containing YAML files and the Jinja2 template path.
 
-        :param metrics_dir: Directory containing YAML files.
-        :param template_path: Path to the Jinja2 template file.
+        Args:
+            metrics_dir (str): Directory containing YAML files.
+            template_path (str): Path to the Jinja2 template file.
         """
         self.metrics_dir = Path(metrics_dir)
         self.template_path = Path(template_path)
@@ -30,8 +35,13 @@ class MarkdownGenerator:
         """
         Load the Jinja2 template.
 
-        :return: Jinja2 template object.
-        :raises TemplateNotFound: If the template file is not found.
+        Returns:
+            Any: Jinja2 template object.
+
+        Raises:
+            TemplateNotFound: If the template file is not found.
+            PermissionError: If there's a permission error while loading the template.
+            Exception: For any other unexpected errors during template loading.
         """
         try:
             template_name = self.template_path.name
@@ -43,61 +53,78 @@ class MarkdownGenerator:
             logging.error(f"Permission error loading template: {e}")
             raise
         except Exception as e:
-            logging.error(f"Unexpected error loading template: {type(e).__name__}: {e}")
+            logging.error(f"Unexpected error loading template: {e}")
             raise
 
     def process_yaml_file(self, yaml_file_path: Path) -> Dict[str, Any]:
         """
-        Process a YAML file and return its content as a dictionary.
+        Process a single YAML file and load its content.
 
-        :param yaml_file_path: Path to the YAML file.
-        :return: Dictionary containing YAML file content.
-        :raises yaml.YAMLError: If there is an error in processing the YAML file.
+        Args:
+            yaml_file_path (Path): Path to the YAML file.
+
+        Returns:
+            Dict[str, Any]: Parsed content of the YAML file.
+
+        Raises:
+            FileNotFoundError: If the YAML file is not found.
+            yaml.YAMLError: If there's an error parsing the YAML file.
+            Exception: For any other unexpected errors during YAML file processing.
         """
         try:
-            with open(yaml_file_path, 'r') as yaml_file:
-                return yaml.safe_load(yaml_file)
+            with open(yaml_file_path, 'r') as file:
+                return yaml.safe_load(file)
+        except FileNotFoundError:
+            logging.error(f"YAML file not found: {yaml_file_path}")
+            raise
         except yaml.YAMLError as e:
-            logging.error(f"YAML error processing file {yaml_file_path}: {e}")
+            logging.error(f"Error parsing YAML file: {e}")
             raise
         except Exception as e:
-            logging.error(f"Error processing YAML file {yaml_file_path}: {e}")
+            logging.error(f"Unexpected error processing YAML file: {e}")
             raise
 
     def render_markdown(self, data: Dict[str, Any]) -> str:
         """
-        Render Markdown from data using the Jinja2 template.
+        Render Markdown content from the provided data using the Jinja2 template.
 
-        :param data: Data to be rendered in the template.
-        :return: Rendered Markdown string.
-        :raises Exception: If there is an error in rendering the Markdown.
+        Args:
+            data (Dict[str, Any]): Data to be rendered in the template.
+
+        Returns:
+            str: Rendered Markdown content.
         """
         try:
             return self.template.render(data)
         except Exception as e:
-            logging.error(f"Error rendering Markdown: {e}")
+            logging.error(f"Error rendering markdown: {e}")
             raise
 
-    def write_output(self, output: str, output_file_path: Path) -> None:
+    def write_output(self, output: str, output_path: Path):
         """
-        Write rendered Markdown to a file.
+        Write the rendered output to a file.
 
-        :param output: Rendered Markdown content.
-        :param output_file_path: Path to the output file.
-        :raises Exception: If there is an error in writing to the file.
+        Args:
+            output (str): Rendered Markdown content.
+            output_path (Path): Path to the output file.
+
+        Raises:
+            IOError: If there's an error writing to the output file.
         """
         try:
-            with open(output_file_path, 'w') as markdown_file:
-                markdown_file.write(output)
-        except Exception as e:
-            logging.error(f"Error writing to file {output_file_path}: {e}")
+            with open(output_path, 'w') as file:
+                file.write(output)
+        except IOError as e:
+            logging.error(f"Error writing output to file: {e}")
             raise
 
     def generate_markdown_files(self) -> Generator[Tuple[Path, Path], None, None]:
         """
         Generate Markdown files from YAML files in the metrics directory.
 
-        :yield: Tuple containing paths to the processed YAML file and the generated Markdown file.
+        Yields:
+            Generator[Tuple[Path, Path], None, None]: A generator yielding tuples of
+            the processed YAML file path and the generated Markdown file path.
         """
         for subdir, _, files in os.walk(self.metrics_dir):
             yaml_files = [f for f in files if f.endswith(self.YAML_EXTENSION)]
@@ -117,9 +144,10 @@ class MarkdownGenerator:
         """
         Check for existing Markdown files in the metrics directory.
 
-        :return: A tuple containing two lists:
-                 1. List of tuples with subdirectory path and markdown file path for directories containing markdown files.
-                 2. List of subdirectory paths for directories that do not contain markdown files.
+        Returns:
+            Tuple[List[Tuple[Path, Path]], List[Path]]: A tuple containing two lists:
+                1. List of tuples with subdirectory path and markdown file path for directories containing markdown files.
+                2. List of subdirectory paths for directories that do not contain markdown files.
         """
         subdirs_with_markdown = []
         subdirs_without_markdown = []
@@ -133,4 +161,3 @@ class MarkdownGenerator:
                 subdirs_without_markdown.append(Path(subdir))
         
         return subdirs_with_markdown, subdirs_without_markdown
-
