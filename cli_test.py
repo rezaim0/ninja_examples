@@ -57,14 +57,16 @@ def test_update_all_tables(runner, mock_macato_agent):
         mock_macato_agent.update_docato_version.assert_called_once()
     Path(tmp_file.name).unlink()  # Clean up the temporary file
 
-@pytest.mark.parametrize("command,error_message", [
-    (['update', 'output', '--model', 'non_existent_file.pkl'], "Invalid value for '--model': Path 'non_existent_file.pkl' does not exist."),
-    (['update', 'all_tables', '--model', 'non_existent_file.pkl'], "Invalid value for '--model': Path 'non_existent_file.pkl' does not exist."),
+@pytest.mark.parametrize("command,expected_error", [
+    (['update', 'output', '--model', 'non_existent_file.pkl'], 
+     "Invalid value for '--model': Path 'non_existent_file.pkl' does not exist."),
+    (['update', 'all_tables', '--model', 'non_existent_file.pkl'], 
+     "Invalid value for '--model': Path 'non_existent_file.pkl' does not exist."),
 ])
-def test_file_not_found_errors(runner, mock_macato_agent, command, error_message):
+def test_file_not_found_errors(runner, mock_macato_agent, command, expected_error):
     result = runner.invoke(cli, command)
     assert result.exit_code != 0
-    assert error_message in result.output
+    assert expected_error in result.output
 
 @pytest.mark.parametrize("command,method_to_mock,error_message", [
     (['update', 'fields'], 'update_fields', "Error updating fields: "),
