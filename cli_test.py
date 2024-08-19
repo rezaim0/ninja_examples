@@ -69,14 +69,19 @@ def test_file_not_found_errors(runner, mock_macato_agent, command, expected_erro
     assert expected_error in result.output
 
 @pytest.mark.parametrize("command,method_to_mock,error_message", [
-    (['update', 'fields'], 'update_fields', "Error updating fields: "),
-    (['update', 'versions'], 'update_docato_version', "Error updating versions: "),
+    (['update', 'fields'], 'update_fields', "Error updating fields: Test error"),
+    (['update', 'versions'], 'update_docato_version', "Error updating versions: Test error"),
+    (['update', 'output', '--model', 'dummy.pkl'], 'update_output', "Error updating output: Test error"),
+    (['update', 'all_tables', '--model', 'dummy.pkl'], 'update_docato_version', "Error updating all tables: Test error"),
 ])
 def test_update_exceptions(runner, mock_macato_agent, command, method_to_mock, error_message):
-    getattr(mock_macato_agent, method_to_mock).side_effect = Exception("Test error")
-    result = runner.invoke(cli, command)
-    assert result.exit_code != 0
-    assert error_message in result.output
+    with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as tmp_file:
+        joblib.dump({}, tmp_file.name)
+        getattr(mock_macato_agent, method_to_mock).side_effect = Exception("Test error")
+        result = runner.invoke(cli, command)
+        assert result.exit_code != 0
+        assert error_message in result.output
+    Path(tmp_file.name).unlink()  # Clean up the temporary file
 
 # Instructions to run the tests:
 # 1. Save this file as test_cli_v1.py in the same directory as your cli_v1.py file.
