@@ -14,7 +14,7 @@ def runner():
     return CliRunner()
 
 @pytest.fixture
-def mock_macato_agent():
+def mock_macato_agent():            # 
     with patch('cli_v1.MacatoAgent', autospec=True) as mock:
         yield mock.return_value
 
@@ -46,9 +46,10 @@ def test_update_all_tables(runner, mock_macato_agent):
         joblib.dump({}, tmp_file.name)
         result = runner.invoke(cli, ['update', 'all_tables', '--model', tmp_file.name])
         assert result.exit_code == 0
+        assert "The pickle file was uploaded successfully." in result.output
+        assert "Versions table updated successfully." in result.output
         assert "Fields updated successfully." in result.output
         assert f"Output updated successfully with model from {tmp_file.name}" in result.output
-        assert "Versions updated successfully." in result.output
         assert "All tables updated successfully." in result.output
         mock_macato_agent.update_fields.assert_called_once()
         mock_macato_agent.load_model.assert_called_once_with(Path(tmp_file.name))
@@ -57,11 +58,10 @@ def test_update_all_tables(runner, mock_macato_agent):
     Path(tmp_file.name).unlink()  # Clean up the temporary file
 
 @pytest.mark.parametrize("command,error_message", [
-    (['update', 'output', '--model', 'non_existent_file.pkl'], "Error updating output: "),
-    (['update', 'all_tables', '--model', 'non_existent_file.pkl'], "Error updating all tables: "),
+    (['update', 'output', '--model', 'non_existent_file.pkl'], "Invalid value for '--model': Path 'non_existent_file.pkl' does not exist."),
+    (['update', 'all_tables', '--model', 'non_existent_file.pkl'], "Invalid value for '--model': Path 'non_existent_file.pkl' does not exist."),
 ])
 def test_file_not_found_errors(runner, mock_macato_agent, command, error_message):
-    mock_macato_agent.load_model.side_effect = FileNotFoundError("File not found")
     result = runner.invoke(cli, command)
     assert result.exit_code != 0
     assert error_message in result.output
@@ -82,3 +82,6 @@ def test_update_exceptions(runner, mock_macato_agent, command, method_to_mock, e
 # 3. Navigate to the directory containing test_cli_v1.py and cli_v1.py.
 # 4. Run the command: pytest test_cli_v1.py
 # 5. Pytest will discover and run all the test functions, displaying the results in the terminal.
+
+
+
