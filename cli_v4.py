@@ -3,11 +3,18 @@ import click
 from pathlib import Path
 from typing import Optional
 from loguru import logger
+from agent import MacatoAgent  # Assuming MacatoAgent is defined in agent.py
 
 # Configure loguru logger
 logger.remove()
 logger.add(sys.stderr, format="{time} {level} {message}", level="INFO")
 logger.add("file_{time}.log", rotation="1 week", level="DEBUG")
+
+class MacatoCliError(click.ClickException):
+    """Custom exception for Macato CLI errors that integrates with Click."""
+    def __init__(self, message):
+        super().__init__(message)
+        logger.error(message)
 
 @click.group()
 def cli() -> None:
@@ -34,8 +41,7 @@ def update_table(fields: bool, versions: bool, output: bool, model: Optional[str
     try:
         if update_all:
             if not model:
-                logger.error("--model is required when using --all")
-                sys.exit(1)
+                raise MacatoCliError("--model is required when using --all")
             agent.load_model(Path(model))
             logger.info(f"Model loaded successfully from {model}")
             agent.update_fields()
@@ -54,8 +60,7 @@ def update_table(fields: bool, versions: bool, output: bool, model: Optional[str
                 logger.info("Versions table updated successfully.")
             if output:
                 if not model:
-                    logger.error("--model is required when updating output")
-                    sys.exit(1)
+                    raise MacatoCliError("--model is required when updating output")
                 agent.load_model(Path(model))
                 logger.info(f"Model loaded successfully from {model}")
                 agent.update_output()
@@ -63,12 +68,11 @@ def update_table(fields: bool, versions: bool, output: bool, model: Optional[str
         
         if not any([fields, versions, output, update_all]):
             logger.warning("No update options provided.")
-            logger.info("No update option specified. Please use --fields, --versions, --output, or --all.")
-            sys.exit(1)
+            click.echo("No update option specified. Please use --fields, --versions, --output, or --all.")
     
     except Exception as e:
         logger.exception(f"Error updating tables: {e}")
-        sys.exit(1)
+        raise MacatoCliError(str(e))
 
 if __name__ == '__main__':
     cli()
