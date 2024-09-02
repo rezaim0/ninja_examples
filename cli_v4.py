@@ -10,12 +10,6 @@ logger.remove()
 logger.add(sys.stderr, format="{time} {level} {message}", level="INFO")
 logger.add("file_{time}.log", rotation="1 week", level="DEBUG")
 
-class MacatoCliError(click.ClickException):
-    """Custom exception for Macato CLI errors that integrates with Click."""
-    def __init__(self, message):
-        super().__init__(message)
-        logger.error(message)
-
 @click.group()
 def cli() -> None:
     """
@@ -41,7 +35,8 @@ def update_table(fields: bool, versions: bool, output: bool, model: Optional[str
     try:
         if update_all:
             if not model:
-                raise MacatoCliError("--model is required when using --all")
+                logger.error("--model is required when using --all")
+                raise click.ClickException("--model is required when using --all")
             agent.load_model(Path(model))
             logger.info(f"Model loaded successfully from {model}")
             agent.update_fields()
@@ -60,7 +55,8 @@ def update_table(fields: bool, versions: bool, output: bool, model: Optional[str
                 logger.info("Versions table updated successfully.")
             if output:
                 if not model:
-                    raise MacatoCliError("--model is required when updating output")
+                    logger.error("--model is required when updating output")
+                    raise click.ClickException("--model is required when updating output")
                 agent.load_model(Path(model))
                 logger.info(f"Model loaded successfully from {model}")
                 agent.update_output()
@@ -72,7 +68,7 @@ def update_table(fields: bool, versions: bool, output: bool, model: Optional[str
     
     except Exception as e:
         logger.exception(f"Error updating tables: {e}")
-        raise MacatoCliError(str(e))
+        raise click.ClickException(str(e))
 
 if __name__ == '__main__':
     cli()
