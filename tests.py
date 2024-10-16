@@ -59,6 +59,21 @@ def test_dev_environment_with_userid(mocker: MockerFixture):
     # Mock get_user_id_tdm to return a specific user ID
     mocker.patch('config.get_user_id_tdm', return_value='jdoe')
 
+    # Mock load_config to return a known configuration
+    mock_config = {
+        'dev': {
+            'database': 'edw',
+            'schema': 'ptap',
+            'table_names': [
+                'modelops_docato_fields',
+                'modelops_docato_output',
+                'modelops_docato_version',
+            ],
+        },
+        # Include other environments if necessary
+    }
+    mocker.patch('config.load_config', return_value=mock_config)
+
     mocker.patch.dict(os.environ, {'AEP_ENV': 'dev'}, clear=True)
     db_config = get_db_config()
     assert db_config.environment == Environment.DEV
@@ -70,6 +85,10 @@ def test_dev_environment_with_userid(mocker: MockerFixture):
         'jdoe_modelops_docato_version',
     ]
     assert db_config.table_names == expected_table_names
+
+
+
+
 
 def test_dev_environment_missing_userid(mocker: MockerFixture):
     # Mock get_user_id_tdm to return None
@@ -111,3 +130,5 @@ def test_invalid_environment(mocker: MockerFixture):
     with pytest.raises(ValueError) as excinfo:
         get_db_config()
     assert 'Invalid environment specified in AEP_ENV' in str(excinfo.value)
+
+
