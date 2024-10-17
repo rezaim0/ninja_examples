@@ -56,11 +56,9 @@ def test_local_environment(mocker: MockerFixture):
     assert db_config.table_names == expected_table_names
 
 def test_dev_environment_with_userid(mocker: MockerFixture):
-    # Mock get_user_id_tdm to return a specific user ID
+    # Mock functions before importing config
     mocker.patch('config.get_user_id_tdm', return_value='jdoe')
-
-    # Mock load_config to return a known configuration
-    mock_config = {
+    mocker.patch('config.load_config', return_value={
         'dev': {
             'database': 'edw',
             'schema': 'ptap',
@@ -70,12 +68,16 @@ def test_dev_environment_with_userid(mocker: MockerFixture):
                 'modelops_docato_version',
             ],
         },
-        # Include other environments if necessary
-    }
-    mocker.patch('config.load_config', return_value=mock_config)
-
+    })
     mocker.patch.dict(os.environ, {'AEP_ENV': 'dev'}, clear=True)
-    db_config = get_db_config()
+
+    # Reload the module after mocks
+    import importlib
+    import config
+    importlib.reload(config)
+
+    db_config = config.DATABASE_CONFIG
+
     assert db_config.environment == Environment.DEV
     assert db_config.database == 'edw'
     assert db_config.schema == 'ptap'
@@ -85,8 +87,6 @@ def test_dev_environment_with_userid(mocker: MockerFixture):
         'jdoe_modelops_docato_version',
     ]
     assert db_config.table_names == expected_table_names
-
-
 
 
 
