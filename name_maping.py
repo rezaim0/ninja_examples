@@ -1,130 +1,76 @@
-# other_module.py
-
-from config import get_db_config
-
-def main():
-    # Retrieve the database configuration
-    db_config = get_db_config()
-    
-    # Define the logical table names
-    logical_table_names = [
-        "modelops_docato_fields",
-        "modelops_docato_output",
-        "modelops_docato_version"
-    ]
-    
-    # Get the physical table names from the configuration
-    physical_table_names = db_config.table_names
-    
-    # Create a mapping from logical to physical table names
-    table_name_mapping = dict(zip(logical_table_names, physical_table_names))
-    
-    # Retrieve the physical table name for 'modelops_docato_version'
-    logical_name = "modelops_docato_version"
-    physical_name = table_name_mapping[logical_name]
-    
-    # Construct the fully qualified table name
-    schema = db_config.schema
-    fully_qualified_table_name = f"{schema}.{physical_name}" if schema else physical_name
-    
-    # Use the table name in your code
-    query = f"SELECT * FROM {fully_qualified_table_name};"
-    print(f"Executing query: {query}")
-    # Here you would execute the query using your database connection
-
-if __name__ == "__main__":
-    main()
-
-############################## second method #####################
-
 # utils.py
 
+from typing import List, Dict
 from config import get_db_config
+from loguru import logger
 
-def get_physical_table_name(logical_name: str) -> str:
-    """
-    Returns the physical table name corresponding to the given logical name.
-    """
-    db_config = get_db_config()
-    logical_table_names = [
-        "modelops_docato_fields",
-        "modelops_docato_output",
-        "modelops_docato_version"
-    ]
-    physical_table_names = db_config.table_names
-    table_name_mapping = dict(zip(logical_table_names, physical_table_names))
-    
-    try:
-        return table_name_mapping[logical_name]
-    except KeyError:
-        raise ValueError(f"Logical table name '{logical_name}' not found in configuration.")
-
-
-# other_module.py
-
-from utils import get_physical_table_name
-from config import get_db_config
-
-def main():
-    # Retrieve the physical table name for 'modelops_docato_version'
-    physical_name = get_physical_table_name("modelops_docato_version")
-    
-    # Get the schema from db_config
-    db_config = get_db_config()
-    schema = db_config.schema
-    fully_qualified_table_name = f"{schema}.{physical_name}" if schema else physical_name
-    
-    # Use the table name in your code
-    query = f"SELECT * FROM {fully_qualified_table_name};"
-    print(f"Executing query: {query}")
-    # Execute the query using your database connection
-
-if __name__ == "__main__":
-    main()
-
-
-
-#########################
-
-
-# constants.py
-
-LOGICAL_TABLE_NAMES = [
+BASE_TABLE_NAMES: List[str] = [
     "modelops_docato_fields",
     "modelops_docato_output",
     "modelops_docato_version"
 ]
 
-
-# utils.py
-
-from config import get_db_config
-from constants import LOGICAL_TABLE_NAMES
-
-def get_physical_table_name(logical_name: str) -> str:
-    db_config = get_db_config()
-    physical_table_names = db_config.table_names
-    table_name_mapping = dict(zip(LOGICAL_TABLE_NAMES, physical_table_names))
-    try:
-        return table_name_mapping[logical_name]
-    except KeyError:
-        raise ValueError(f"Logical table name '{logical_name}' not found in configuration.")
-
-
-# utils.py
-
-from config import get_db_config
-from constants import LOGICAL_TABLE_NAMES  # Assuming you have a constants module
-
-def get_physical_table_name(logical_name: str) -> str:
+def get_physical_table_name(base_name: str) -> str:
     """
-    Returns the physical table name corresponding to the given logical name.
+    Returns the physical table name corresponding to the given base name,
+    considering environment-specific modifications and ensuring the order
+    matches between base and physical table names.
+
+    Args:
+        base_name (str): The base name of the table as defined in the application.
+
+    Returns:
+        str: The physical table name to be used in database queries.
+
+    Raises:
+        TypeError: If db_config.table_names is not a list.
+        ValueError: If there's a mismatch between base and physical table names.
+        ValueError: If the base table name is not found in the mapping.
     """
     db_config = get_db_config()
-    physical_table_names = db_config.table_names
-    table_name_mapping = dict(zip(LOGICAL_TABLE_NAMES, physical_table_names))
-    
+    # Get the table names from the config.yaml
+    physical_table_names: List[str] = db_config.table_names
+
+    # Validate that physical_table_names is a list
+    if not isinstance(physical_table_names, list):
+        logger.error("db_config.table_names must be a list.")
+        raise TypeError("db_config.table_names must be a list.")
+
+    # Validate that lengths match
+    if len(BASE_TABLE_NAMES) != len(physical_table_names):
+        logger.error(
+            f"Mismatch in number of table names: "
+            f"{len(BASE_TABLE_NAMES)} base names vs "
+            f"{len(physical_table_names)} physical names."
+        )
+        raise ValueError(
+            "Mismatch between the number of base and physical table names. "
+            "Ensure they have the same number of elements."
+        )
+
+    # Validate that the order matches
+    mismatched_indices = []
+    for index, (base_name_item, physical_name) in enumerate(zip(BASE_TABLE_NAMES, physical_table_names)):
+        # In dev environment, physical names may have a user ID prefix
+        if not physical_name.endswith(base_name_item):
+            mismatched_indices.append((index, base_name_item, physical_name))
+
+    if mismatched_indices:
+        for index, base_name_item, physical_name in mismatched_indices:
+            logger.error(
+                f"At index {index}: physical table name '{physical_name}' does not match "
+                f"base table name '{base_name_item}'."
+            )
+        raise ValueError("Order of base and physical table names does not match.")
+
+    # Create the mapping
+    table_name_mapping: Dict[str, str] = dict(zip(BASE_TABLE_NAMES, physical_table_names))
+
+    # Retrieve the physical table name
     try:
-        return table_name_mapping[logical_name]
+        physical_table_name = table_name_mapping[base_name]
+        logger.debug(f"Physical table name for '{base_name}': '{physical_table_name}'")
+        return physical_table_name
     except KeyError:
-        raise ValueError(f"Logical table name '{logical_name}' not found in configuration.")
+        logger.error(f"Base table name '{base_name}' not found in mapping.")
+        raise ValueError(f"Base table name '{base_name}' not found in mapping.")
