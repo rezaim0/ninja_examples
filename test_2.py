@@ -79,6 +79,12 @@ dev:
     assert config['local']['schema'] is None
     assert config['local']['table_names'] == list(DEFAULT_TABLE_NAMES.values())
 
+def test_load_config_file_not_found(mocker: MockerFixture):
+    """Test that `load_config` raises FileNotFoundError when the file does not exist."""
+    mocker.patch('builtins.open', side_effect=FileNotFoundError)
+    with pytest.raises(FileNotFoundError):
+        load_config("nonexistent/config.yaml")
+
 def test_get_user_id_validations(mocker: MockerFixture):
     """Tests user ID extraction with different notebook prefix patterns."""
     test_cases = [
@@ -118,15 +124,68 @@ def test_get_db_config_missing_table_names(mocker: MockerFixture):
     }
     mocker.patch('config.load_config', return_value=mock_incomplete_config)
     mocker.patch.dict(os.environ, {'AEP_ENV': 'local'}, clear=True)
+    mock_logger = mocker.patch('config.logger')
 
     with pytest.raises(ValueError) as exc_info:
         get_db_config()
     assert "Missing table names for keys:" in str(exc_info.value)
+    mock_logger.error.assert_called_once_with("Missing table names for keys: {'version', 'output'}")
 
 def test_get_db_config_invalid_env(mocker: MockerFixture):
     """Tests that get_db_config raises ValueError for an invalid environment."""
     mocker.patch.dict(os.environ, {'AEP_ENV': 'invalid_env'}, clear=True)
+    mock_logger = mocker.patch('config.logger')
 
     with pytest.raises(ValueError) as exc_info:
         get_db_config()
     assert "Invalid environment specified in AEP_ENV:" in str(exc_info.value)
+    mock_logger.error.assert_called_once_with("Invalid environment specified in AEP_ENV: invalid_env")
+
+def test_get_user_id_nb_prefix_not_set(mocker: MockerFixture):
+    """Test `get_user_id` returns None when NB_PREFIX is not set and logs an error."""
+    mocker.patch.dict(os.environ, {}, clear=True)
+    mock_logger = mocker.patch('config.logger')
+
+    user_id = get_user_id()
+    assert user_id is None
+    mock_logger.error.assert_called_once_with("NB_PREFIX environment variable is not set.")
+
+def test_get_user_id_insufficient_parts(mocker: MockerFixture):
+    """Test `get_user_id` returns None when NB_PREFIX does not have enough parts and logs an error."""
+    mocker.patch.dict(os.environ, {'NB_PREFIX': '/user'}, clear=True)
+    mock_logger = mocker.patch('config.logger')
+
+    user_id = get_user_id()
+    assert user_id is None
+    mock_logger.error.assert_called_once_with("NB_PREFIX does not contain enough parts to extract user ID.")
+
+def test_get_user_id_exception(mocker: MockerFixture):
+    """Test `get_user_id` handles exceptions and logs an exception message."""
+    mocker.patch('os.getenv', side_effect=Exception('Unexpected error'))
+    mock_logger = mocker.patch('config.logger')
+
+    user_id = get_user_id()
+    assert user_id is None
+    mock_logger.exception.assert_called_once_with("An error occurred while retrieving the user ID: Unexpected error")
+
+@pytest.mark.parametrize("env_config,expected_error", [
+    ({}, "No configuration found for environment: local"),
+    ({'local': {}}, None),
+    ({'local': {'database': TEST_DATABASE_LOCAL}}, None),
+    ({'local': {'schema': None}}, None),
+])
+def test_get_db_config_structure_variations(mocker: MockerFixture, env_config, expected_error):
+    """Tests database configuration with different config structure variations and checks for missing fields."""
+    mocker.patch('config.load_config', return_value=env_config)
+    mocker.patch.dict(os.environ, {'AEP_ENV': 'local'}, clear=True)
+    mock_logger = mocker.patch('config.logger')
+
+    if expected_error:
+        with pytest.raises(ValueError) as exc_info:
+            get_db_config()
+        assert expected_error in str(exc_info.value)
+        mock_logger.error.assert_called_once_with(expected_error)
+    else:
+        config = get_db_config()
+        assert isinstance(config, DBConfig)
+        assert config.environment == Environment.LOCAL
