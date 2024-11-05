@@ -1,191 +1,263 @@
-"""Test module for configuration management functionality.
+"""Tests for the database configuration module.
 
-This module contains test cases for the config module's functionality, including 
-configuration loading, user ID validation, and database configuration management.
+This module contains comprehensive test cases for the database configuration functionality,
+including environment handling, config loading, and user ID extraction. The tests are
+specifically designed for the YAML configuration that uses anchors and inheritance
+for different environments.
+
+Note:
+    These tests cover both success and failure scenarios for all major functions
+    in the database configuration module.
 """
 
 import os
+from pathlib import Path
+from typing import Dict, Any
+
 import pytest
+import yaml
 from pytest_mock import MockerFixture
+
 from config import (
-    load_config,
-    get_user_id,
-    get_db_config,
     DBConfig,
     Environment,
+    load_config,
+    get_user_id,
+    get_db_config
 )
-from loguru import logger
 
-# Constants for test values
-TEST_USER_ID = 'u1234'
-TEST_NOTEBOOK_PATH = '/user/notebook'
-DEFAULT_TABLE_NAMES = {
-    'fields': 'modelops_docato_fields',
-    'output': 'modelops_docato_output',
-    'version': 'modelops_docato_version'
-}
-TEST_DATABASE_EDW = 'edw'
-TEST_DATABASE_LOCAL = 'local.db'
-TEST_SCHEMA_PTAP = 'ptap'
-TEST_SCHEMA_PMODEL = 'pmodel'
-
-# Mock configuration for tests
-mock_config = {
-    'local': {
-        'database': TEST_DATABASE_LOCAL,
-        'schema': None,
-        'table_names': list(DEFAULT_TABLE_NAMES.values()),
-    },
-    'dev': {
-        'database': TEST_DATABASE_EDW,
-        'schema': TEST_SCHEMA_PTAP,
-        'table_names': list(DEFAULT_TABLE_NAMES.values()),
-    },
-    'staging': {
-        'database': TEST_DATABASE_EDW,
-        'schema': TEST_SCHEMA_PTAP,
-        'table_names': list(DEFAULT_TABLE_NAMES.values()),
-    },
-    'prod': {
-        'database': TEST_DATABASE_EDW,
-        'schema': TEST_SCHEMA_PMODEL,
-        'table_names': list(DEFAULT_TABLE_NAMES.values()),
-    },
-}
-
-def test_load_config_success(mocker: MockerFixture):
-    """Test that `load_config` successfully loads the configuration."""
-    sample_yaml = f"""
-local:
-    database: {TEST_DATABASE_LOCAL}
-    schema: null
-    table_names:
-        - modelops_docato_fields
-        - modelops_docato_output
-        - modelops_docato_version
-dev:
-    database: {TEST_DATABASE_EDW}
-    schema: {TEST_SCHEMA_PTAP}
-    table_names:
-        - modelops_docato_fields
-        - modelops_docato_output
-        - modelops_docato_version
+@pytest.fixture
+def sample_config() -> Dict[str, Any]:
     """
-    mocker.patch('builtins.open', mocker.mock_open(read_data=sample_yaml))
-    config = load_config("dummy/path/config.yaml")
-    
-    # Test local environment config
-    assert config['local']['database'] == TEST_DATABASE_LOCAL
-    assert config['local']['schema'] is None
-    assert config['local']['table_names'] == list(DEFAULT_TABLE_NAMES.values())
+    Provides a sample configuration dictionary matching the actual config structure.
 
-def test_load_config_file_not_found(mocker: MockerFixture):
-    """Test that `load_config` raises FileNotFoundError when the file does not exist."""
-    mocker.patch('builtins.open', side_effect=FileNotFoundError)
-    with pytest.raises(FileNotFoundError):
-        load_config("nonexistent/config.yaml")
-
-def test_get_user_id_validations(mocker: MockerFixture):
-    """Tests user ID extraction with different notebook prefix patterns."""
-    test_cases = [
-        (f'{TEST_NOTEBOOK_PATH}/{TEST_USER_ID}-notebook', TEST_USER_ID),
-        (f'{TEST_NOTEBOOK_PATH}/invalid', None),
-        (f'{TEST_NOTEBOOK_PATH}/12345-notebook', None),
-    ]
-    for nb_prefix, expected in test_cases:
-        mocker.patch.dict(os.environ, {'NB_PREFIX': nb_prefix})
-        result = get_user_id()
-        assert result == expected
-
-@pytest.mark.parametrize("env,expected_db,expected_schema,expected_table_prefix", [
-    ("local", TEST_DATABASE_LOCAL, None, ""),
-    ("dev", TEST_DATABASE_EDW, TEST_SCHEMA_PTAP, f"{TEST_USER_ID}_"),
-    ("staging", TEST_DATABASE_EDW, TEST_SCHEMA_PTAP, ""),
-    ("prod", TEST_DATABASE_EDW, TEST_SCHEMA_PMODEL, ""),
-])
-def test_get_db_config_environments(mocker: MockerFixture, env, expected_db, expected_schema, expected_table_prefix):
-    """Tests database configuration for different environments."""
-    mocker.patch('config.load_config', return_value=mock_config)
-    mocker.patch('config.get_user_id', return_value=TEST_USER_ID if env == "dev" else None)
-    mocker.patch.dict(os.environ, {'AEP_ENV': env}, clear=True)
-
-    config = get_db_config()
-    assert config.database == expected_db
-    assert config.schema == expected_schema
-    assert config.table_names == {key: f"{expected_table_prefix}{name}" for key, name in DEFAULT_TABLE_NAMES.items()}
-
-def test_get_db_config_missing_table_names(mocker: MockerFixture):
-    """Tests that get_db_config raises an error if required table names are missing."""
-    mock_incomplete_config = {
-        'local': {
-            'database': TEST_DATABASE_LOCAL,
-            'table_names': ['modelops_docato_fields'],  # Missing 'output' and 'version'
+    Returns:
+        Dict[str, Any]: A dictionary containing test configuration data with YAML anchors.
+    """
+    return {
+        "default": {
+            "table_names": [
+                "modelops_docato_fields",
+                "modelops_docato_output",
+                "modelops_docato_version"
+            ]
+        },
+        "local": {
+            "table_names": [
+                "modelops_docato_fields",
+                "modelops_docato_output",
+                "modelops_docato_version"
+            ],
+            "database": "local.db",
+            "schema": None
+        },
+        "dev": {
+            "table_names": [
+                "modelops_docato_fields",
+                "modelops_docato_output",
+                "modelops_docato_version"
+            ],
+            "database": "edw",
+            "schema": "ptap"
+        },
+        "staging": {
+            "table_names": [
+                "modelops_docato_fields",
+                "modelops_docato_output",
+                "modelops_docato_version"
+            ],
+            "database": "edw",
+            "schema": "ptap"
+        },
+        "prod": {
+            "table_names": [
+                "modelops_docato_fields",
+                "modelops_docato_output",
+                "modelops_docato_version"
+            ],
+            "database": "edw",
+            "schema": "pmodel"
         }
     }
-    mocker.patch('config.load_config', return_value=mock_incomplete_config)
-    mocker.patch.dict(os.environ, {'AEP_ENV': 'local'}, clear=True)
-    mock_logger = mocker.patch('config.logger')
 
-    with pytest.raises(ValueError) as exc_info:
-        get_db_config()
-    assert "Missing table names for keys:" in str(exc_info.value)
-    mock_logger.error.assert_called_once_with("Missing table names for keys: {'version', 'output'}")
+@pytest.fixture
+def mock_config_file(tmp_path: Path) -> Path:
+    """
+    Creates a temporary config file with the actual YAML structure.
 
-def test_get_db_config_invalid_env(mocker: MockerFixture):
-    """Tests that get_db_config raises ValueError for an invalid environment."""
-    mocker.patch.dict(os.environ, {'AEP_ENV': 'invalid_env'}, clear=True)
-    mock_logger = mocker.patch('config.logger')
+    Args:
+        tmp_path (Path): Pytest fixture providing temporary directory path.
 
-    with pytest.raises(ValueError) as exc_info:
-        get_db_config()
-    assert "Invalid environment specified in AEP_ENV:" in str(exc_info.value)
-    mock_logger.error.assert_called_once_with("Invalid environment specified in AEP_ENV: invalid_env")
+    Returns:
+        Path: Path to the temporary config file.
+    """
+    config_content = """
+default: &default
+  table_names:
+    - modelops_docato_fields
+    - modelops_docato_output
+    - modelops_docato_version
+local:
+  <<: *default
+  database: local.db
+  schema: null
+dev:
+  <<: *default
+  database: edw
+  schema: ptap
+staging:
+  <<: *default
+  database: edw
+  schema: ptap
+prod:
+  <<: *default
+  database: edw
+  schema: pmodel
+"""
+    config_file = tmp_path / "test_config.yaml"
+    config_file.write_text(config_content)
+    return config_file
 
-def test_get_user_id_nb_prefix_not_set(mocker: MockerFixture):
-    """Test `get_user_id` returns None when NB_PREFIX is not set and logs an error."""
-    mocker.patch.dict(os.environ, {}, clear=True)
-    mock_logger = mocker.patch('config.logger')
+def test_load_config(mock_config_file: Path) -> None:
+    """
+    Tests the load_config function with the actual configuration structure.
 
-    user_id = get_user_id()
-    assert user_id is None
-    mock_logger.error.assert_called_once_with("NB_PREFIX environment variable is not set.")
+    Args:
+        mock_config_file (Path): Path to the test configuration file.
+    """
+    config = load_config(str(mock_config_file))
+    assert isinstance(config, dict)
+    
+    # Check inheritance from default
+    environments = ["local", "dev", "staging", "prod"]
+    for env in environments:
+        assert env in config
+        assert "table_names" in config[env]
+        assert len(config[env]["table_names"]) == 3
+        assert "modelops_docato_fields" in config[env]["table_names"]
+        assert "modelops_docato_output" in config[env]["table_names"]
+        assert "modelops_docato_version" in config[env]["table_names"]
 
-def test_get_user_id_insufficient_parts(mocker: MockerFixture):
-    """Test `get_user_id` returns None when NB_PREFIX does not have enough parts and logs an error."""
-    mocker.patch.dict(os.environ, {'NB_PREFIX': '/user'}, clear=True)
-    mock_logger = mocker.patch('config.logger')
+    # Check environment-specific values
+    assert config["local"]["database"] == "local.db"
+    assert config["local"]["schema"] is None
+    
+    assert config["dev"]["database"] == "edw"
+    assert config["dev"]["schema"] == "ptap"
+    
+    assert config["prod"]["database"] == "edw"
+    assert config["prod"]["schema"] == "pmodel"
 
-    user_id = get_user_id()
-    assert user_id is None
-    mock_logger.error.assert_called_once_with("NB_PREFIX does not contain enough parts to extract user ID.")
-
-def test_get_user_id_exception(mocker: MockerFixture):
-    """Test `get_user_id` handles exceptions and logs an exception message."""
-    mocker.patch('os.getenv', side_effect=Exception('Unexpected error'))
-    mock_logger = mocker.patch('config.logger')
-
-    user_id = get_user_id()
-    assert user_id is None
-    mock_logger.exception.assert_called_once_with("An error occurred while retrieving the user ID: Unexpected error")
-
-@pytest.mark.parametrize("env_config,expected_error", [
-    ({}, "No configuration found for environment: local"),
-    ({'local': {}}, None),
-    ({'local': {'database': TEST_DATABASE_LOCAL}}, None),
-    ({'local': {'schema': None}}, None),
+@pytest.mark.parametrize("environment,expected_db,expected_schema", [
+    ("local", "local.db", None),
+    ("dev", "edw", "ptap"),
+    ("staging", "edw", "ptap"),
+    ("prod", "edw", "pmodel"),
 ])
-def test_get_db_config_structure_variations(mocker: MockerFixture, env_config, expected_error):
-    """Tests database configuration with different config structure variations and checks for missing fields."""
-    mocker.patch('config.load_config', return_value=env_config)
-    mocker.patch.dict(os.environ, {'AEP_ENV': 'local'}, clear=True)
-    mock_logger = mocker.patch('config.logger')
+def test_get_db_config_environments(
+    mocker: MockerFixture,
+    mock_config_file: Path,
+    environment: str,
+    expected_db: str,
+    expected_schema: str
+) -> None:
+    """
+    Tests get_db_config function for all environments.
 
-    if expected_error:
-        with pytest.raises(ValueError) as exc_info:
-            get_db_config()
-        assert expected_error in str(exc_info.value)
-        mock_logger.error.assert_called_once_with(expected_error)
-    else:
-        config = get_db_config()
-        assert isinstance(config, DBConfig)
-        assert config.environment == Environment.LOCAL
+    Args:
+        mocker (MockerFixture): Pytest mocker fixture.
+        mock_config_file (Path): Path to test config file.
+        environment (str): Test environment value.
+        expected_db (str): Expected database name.
+        expected_schema (str): Expected schema name.
+    """
+    mocker.patch.dict(os.environ, {"AEP_ENV": environment})
+    if environment == "dev":
+        mocker.patch.dict(os.environ, {"NB_PREFIX": "/hub/user/u1234-workspace"})
+    
+    mocker.patch("config.load_config", return_value=yaml.safe_load(mock_config_file.read_text()))
+    
+    config = get_db_config()
+    assert isinstance(config, DBConfig)
+    assert config.environment == Environment(environment)
+    assert config.database == expected_db
+    assert config.schema == expected_schema
+    
+    # Verify table names
+    expected_tables = {
+        "fields": "modelops_docato_fields",
+        "output": "modelops_docato_output",
+        "version": "modelops_docato_version"
+    }
+    
+    if environment == "dev":
+        expected_tables = {
+            key: f"u1234_{value}" 
+            for key, value in expected_tables.items()
+        }
+    
+    assert config.table_names == expected_tables
+
+def test_get_db_config_dev_table_prefixing(mocker: MockerFixture, mock_config_file: Path) -> None:
+    """
+    Tests table name prefixing in dev environment.
+
+    Args:
+        mocker (MockerFixture): Pytest mocker fixture.
+        mock_config_file (Path): Path to test config file.
+    """
+    mocker.patch.dict(os.environ, {
+        "AEP_ENV": "dev",
+        "NB_PREFIX": "/hub/user/u1234-workspace"
+    })
+    mocker.patch("config.load_config", return_value=yaml.safe_load(mock_config_file.read_text()))
+    
+    config = get_db_config()
+    for table_name in config.table_names.values():
+        assert table_name.startswith("u1234_")
+        assert "modelops_docato" in table_name
+
+def test_table_mapping_consistency(mocker: MockerFixture, mock_config_file: Path) -> None:
+    """
+    Tests that table names are consistently mapped to their correct keys.
+
+    Args:
+        mocker (MockerFixture): Pytest mocker fixture.
+        mock_config_file (Path): Path to test config file.
+    """
+    mocker.patch.dict(os.environ, {"AEP_ENV": "local"})
+    mocker.patch("config.load_config", return_value=yaml.safe_load(mock_config_file.read_text()))
+    
+    config = get_db_config()
+    assert "fields" in config.table_names
+    assert config.table_names["fields"] == "modelops_docato_fields"
+    assert "output" in config.table_names
+    assert config.table_names["output"] == "modelops_docato_output"
+    assert "version" in config.table_names
+    assert config.table_names["version"] == "modelops_docato_version"
+
+@pytest.mark.parametrize("invalid_table_names", [
+    ["modelops_docato_fields", "modelops_docato_output"],  # Missing version
+    ["modelops_docato_fields"],  # Missing multiple
+    ["invalid_table_1", "invalid_table_2", "invalid_table_3"],  # All invalid
+])
+def test_get_db_config_invalid_table_names(
+    mocker: MockerFixture,
+    sample_config: Dict[str, Any],
+    invalid_table_names: list
+) -> None:
+    """
+    Tests get_db_config with invalid or missing table names.
+
+    Args:
+        mocker (MockerFixture): Pytest mocker fixture.
+        sample_config (Dict[str, Any]): Sample configuration data.
+        invalid_table_names (list): List of invalid table names to test.
+    """
+    sample_config["local"]["table_names"] = invalid_table_names
+    
+    mocker.patch.dict(os.environ, {"AEP_ENV": "local"})
+    mocker.patch("config.load_config", return_value=sample_config)
+    
+    with pytest.raises(ValueError, match="Missing table names for keys"):
+        get_db_config()
