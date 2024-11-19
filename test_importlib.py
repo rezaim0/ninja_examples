@@ -1,182 +1,281 @@
-import pytest
-from unittest.mock import MagicMock
-from typing import Any, Dict
+import sys
 from pathlib import Path
-from my_package.shared.util import get_sql_file_paths
-
+from typing import Any, List, Dict
+import pytest
+from click.testing import CliRunner
+from unittest.mock import MagicMock, patch
+from my_package.cli.extract_tables import extract_tables
 
 @pytest.fixture
-def mock_resources_files(mocker: Any) -> MagicMock:
-    """Fixture to mock importlib.resources.files.
+def runner() -> CliRunner:
+    """Fixture to create a Click CliRunner instance."""
+    return CliRunner()
+
+def test_extract_tables_no_arguments(mocker: Any, runner: CliRunner, caplog: Any) -> None:
+    """Test the extract_tables command with no arguments provided.
 
     Args:
         mocker (Any): pytest-mock fixture for mocking.
-
-    Returns:
-        MagicMock: The mocked resources.files function.
+        runner (CliRunner): Click test runner fixture.
+        caplog (Any): Pytest fixture to capture logs.
     """
-    return mocker.patch('my_package.shared.util.resources.files')
+    with mocker.patch('sys.exit') as mock_sys_exit:
+        result = runner.invoke(extract_tables, [])
+        assert result.exit_code == 1
+        assert "No SQL files or modules have been provided." in caplog.text
+        mock_sys_exit.assert_called_once_with(1)
 
-
-@pytest.fixture
-def mock_logger(mocker: Any) -> Dict[str, MagicMock]:
-    """Fixture to mock logger methods.
-
-    Args:
-        mocker (Any): pytest-mock fixture for mocking.
-
-    Returns:
-        Dict[str, MagicMock]: A dictionary of mocked logger methods.
-    """
-    return {
-        'warning': mocker.patch('my_package.shared.util.logger.warning'),
-        'error': mocker.patch('my_package.shared.util.logger.error'),
-    }
-
-
-@pytest.fixture
-def mock_modules_pkg(mocker: Any) -> MagicMock:
-    """Fixture to create the mock modules package.
-
-    Args:
-        mocker (Any): pytest-mock fixture for mocking.
-
-    Returns:
-        MagicMock: The mocked modules package.
-    """
-    return MagicMock()
-
-
-@pytest.fixture
-def create_entry(mocker: Any):
-    """Fixture to create mock directory entries.
-
-    Args:
-        mocker (Any): pytest-mock fixture for mocking.
-
-    Returns:
-        Callable: A function to create a mock directory entry.
-    """
-    def _create_entry(name: str, has_sql_file: bool) -> MagicMock:
-        """Create a mock directory entry.
-
-        Args:
-            name (str): The name of the module.
-            has_sql_file (bool): Whether the SQL file exists.
-
-        Returns:
-            MagicMock: The mocked directory entry.
-        """
-        entry = MagicMock(spec=Path)
-        entry.is_dir.return_value = True
-        entry.name = name
-
-        # Mock the SQL file path and its existence
-        sql_file = MagicMock(spec=Path)
-        sql_file.is_file.return_value = has_sql_file
-        sql_file.resolve.return_value = Path(f"/fake/path/{name}/{name}.sql")
-
-        # Simulate the / operator (path joining)
-        def truediv_mock(other: str) -> MagicMock:
-            if other == f"{name}.sql":
-                return sql_file
-            else:
-                other_path = MagicMock(spec=Path)
-                return other_path
-        entry.__truediv__.side_effect = truediv_mock
-        return entry
-    return _create_entry
-
-
-def test_get_sql_file_paths(
-    mock_resources_files: MagicMock,
-    mock_logger: Dict[str, MagicMock],
-    mock_modules_pkg: MagicMock,
-    create_entry: Any
+@pytest.mark.parametrize("sql_files, expected_tables", [
+    (['file1.sql'], ['table1', 'table2']),
+    (['file2.sql', 'file3.sql'], ['table3', 'table4']),
+])
+def test_extract_tables_with_sql_files(
+    mocker: Any,
+    runner: CliRunner,
+    sql_files: List[str],
+    expected_tables: List[str],
+    caplog: Any
 ) -> None:
-    """Test the get_sql_file_paths function with various module names.
+    """Test the extract_tables command with SQL files provided.
 
     Args:
-        mock_resources_files (MagicMock): Mocked resources.files function.
-        mock_logger (Dict[str, MagicMock]): Mocked logger methods.
-        mock_modules_pkg (MagicMock): Mocked modules package.
-        create_entry (Callable): Function to create mock directory entries.
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        sql_files (List[str]): List of SQL files to test.
+        expected_tables (List[str]): Expected list of extracted tables.
+        caplog (Any): Pytest fixture to capture logs.
     """
-    # Mock the resources.files function to return the mocked modules package
-    mock_resources_files.return_value = mock_modules_pkg
+    # Mock extract_source_tables to return expected_tables
+    mocker.patch(
+        'my_package.cli.extract_tables.extract_source_tables',
+        return_value=expected_tables
+    )
+    args = []
+    for sql_file in sql_files:
+        args.extend(['--sql-file', sql_file])
 
-    # Create mock entries for modules
-    entry_a = create_entry('ModuleA', True)   # Module with SQL file
-    entry_b = create_entry('ModuleB', True)   # Module with SQL file
-    entry_c = create_entry('ModuleC', False)  # Module without SQL file
+    result = runner.invoke(extract_tables, args)
 
-    # Mock the iterdir method to return our mock entries
-    mock_modules_pkg.iterdir.return_value = [entry_a, entry_b, entry_c]
+    assert result.exit_code == 0
+    assert "Source tables have been found." in caplog.text
+    for table in expected_tables:
+        assert f"    - {table}" in result.output
 
-    def mock_files_side_effect(package_name: str) -> MagicMock:
-        """Side effect function for resources.files mock.
+@pytest.mark.parametrize("modules, sql_file_paths, expected_tables, expected_warnings, expected_exit_code", [
+    (
+        ['module1', 'module2'],
+        {'module1': '/path/to/module1.sql', 'module2': '/path/to/module2.sql'},
+        ['table1', 'table2'],
+        [],
+        0
+    ),
+    (
+        ['module1', 'module1'],  # Duplicate modules
+        {'module1': '/path/to/module1.sql'},
+        ['table1'],
+        ["Duplicate module detected and ignored: module1"],
+        0
+    ),
+    (
+        ['module1', 'module3'],  # Module3 not found
+        {'module1': '/path/to/module1.sql'},
+        ['table1'],
+        ["Modules not found: ['module3']"],
+        0
+    ),
+    (
+        [''],  # Empty module name
+        {},
+        [],
+        ["Module not found for name: "],
+        1
+    ),
+    (
+        ['module@'],  # Module with invalid character
+        {},
+        [],
+        ["Modules not found: ['module@']"],
+        1
+    ),
+])
+def test_extract_tables_with_flib_modules(
+    mocker: Any,
+    runner: CliRunner,
+    modules: List[str],
+    sql_file_paths: Dict[str, str],
+    expected_tables: List[str],
+    expected_warnings: List[str],
+    expected_exit_code: int,
+    caplog: Any
+) -> None:
+    """Test the extract_tables command with flib_modules provided.
 
-        Args:
-            package_name (str): The package name requested.
+    Args:
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        modules (List[str]): List of modules to test.
+        sql_file_paths (Dict[str, str]): Mocked return value of get_sql_file_paths.
+        expected_tables (List[str]): Expected list of extracted tables.
+        expected_warnings (List[str]): Expected warning messages.
+        expected_exit_code (int): Expected exit code of the command.
+        caplog (Any): Pytest fixture to capture logs.
+    """
+    mocker.patch(
+        'my_package.cli.extract_tables.get_sql_file_paths',
+        return_value=sql_file_paths
+    )
+    mocker.patch(
+        'my_package.cli.extract_tables.extract_source_tables',
+        return_value=expected_tables
+    )
 
-        Returns:
-            MagicMock: The mocked package or raises an error.
+    args = []
+    for module in modules:
+        args.extend(['--flib-modules', module])
 
-        Raises:
-            ModuleNotFoundError: If the package does not exist.
-        """
-        if package_name == 'project_name.modules':
-            return mock_modules_pkg
-        elif package_name.startswith('project_name.modules.'):
-            actual_mod_name = package_name.split('.')[-1]
-            if actual_mod_name == 'ModuleD':
-                # Simulate ModuleNotFoundError for ModuleD
-                raise ModuleNotFoundError(f"No module named '{package_name}'")
-            mod_pkg = MagicMock()
-            resource_name = f"{actual_mod_name}.sql"
-            sql_file = MagicMock(spec=Path)
+    with mocker.patch('sys.exit') as mock_sys_exit:
+        result = runner.invoke(extract_tables, args)
 
-            if actual_mod_name in ['ModuleA', 'ModuleB']:
-                # Modules with SQL files
-                sql_file.is_file.return_value = True
-                sql_file.resolve.return_value = Path(f"/fake/path/{actual_mod_name}/{resource_name}")
-            else:
-                # Modules without SQL files
-                sql_file.is_file.return_value = False
+        assert result.exit_code == expected_exit_code
 
-            def truediv_mock(other: str) -> MagicMock:
-                if other == resource_name:
-                    return sql_file
-                else:
-                    other_path = MagicMock(spec=Path)
-                    return other_path
+        for warning in expected_warnings:
+            assert warning in caplog.text
 
-            mod_pkg.__truediv__.side_effect = truediv_mock
-            return mod_pkg
+        if expected_tables:
+            for table in expected_tables:
+                assert f"    - {table}" in result.output
+
+        if expected_exit_code != 0:
+            mock_sys_exit.assert_called_once_with(expected_exit_code)
         else:
-            raise ModuleNotFoundError(f"No module named '{package_name}'")
+            mock_sys_exit.assert_not_called()
 
-    # Set the side effect for resources.files mock
-    mock_resources_files.side_effect = mock_files_side_effect
+@pytest.mark.parametrize("sql_files, exception_message", [
+    (['nonexistent.sql'], "File not found"),
+    (['invalid.sql'], "Invalid SQL file"),
+])
+def test_extract_tables_with_invalid_sql_files(
+    mocker: Any,
+    runner: CliRunner,
+    sql_files: List[str],
+    exception_message: str,
+    caplog: Any
+) -> None:
+    """Test the extract_tables command with invalid SQL files.
 
-    # Test the function with various module names, including edge cases
-    test_modules = ['ModuleA', 'moduleb', 'modulec', 'ModuleD', '', 'Mod@uleE']
-    result = get_sql_file_paths(test_modules)
+    Args:
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        sql_files (List[str]): List of SQL files to test.
+        exception_message (str): Exception message to simulate.
+        caplog (Any): Pytest fixture to capture logs.
+    """
+    mocker.patch(
+        'my_package.cli.extract_tables.extract_source_tables',
+        side_effect=Exception(exception_message)
+    )
 
-    expected_result = {
-        'ModuleA': str(Path('/fake/path/ModuleA/ModuleA.sql')),
-        'moduleb': str(Path('/fake/path/ModuleB/ModuleB.sql')),
-    }
+    args = []
+    for sql_file in sql_files:
+        args.extend(['--sql-file', sql_file])
 
-    assert result == expected_result
+    with mocker.patch('sys.exit') as mock_sys_exit:
+        result = runner.invoke(extract_tables, args)
 
-    # Verify that warnings and errors were logged appropriately
-    mock_logger['warning'].assert_any_call("SQL file not found for module: ModuleC")
-    mock_logger['warning'].assert_any_call("Module not found for name: ModuleD")
-    mock_logger['warning'].assert_any_call("Module not found for name: ")
-    mock_logger['warning'].assert_any_call("Module not found for name: Mod@uleE")
-    assert mock_logger['warning'].call_count == 4
+        assert result.exit_code == 1
+        assert f"An error occurred while extracting source tables: {exception_message}" in caplog.text
+        mock_sys_exit.assert_called_once_with(1)
 
-    # Ensure that errors were logged for exceptions
-    mock_logger['error'].assert_any_call("Module package not found: project_name.modules.ModuleD")
-    assert mock_logger['error'].call_count == 1
+def test_extract_tables_no_sql_files_found(mocker: Any, runner: CliRunner, caplog: Any) -> None:
+    """Test the extract_tables command when no SQL files are found for the specified modules.
+
+    Args:
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        caplog (Any): Pytest fixture to capture logs.
+    """
+    mocker.patch(
+        'my_package.cli.extract_tables.get_sql_file_paths',
+        return_value={}
+    )
+
+    args = ['--flib-modules', 'module1']
+
+    with mocker.patch('sys.exit') as mock_sys_exit:
+        result = runner.invoke(extract_tables, args)
+        assert result.exit_code == 1
+        assert "Modules not found: ['module1']" in caplog.text
+        assert "No SQL files found for the specified modules." in caplog.text
+        mock_sys_exit.assert_called_once_with(1)
+
+def test_extract_tables_no_tables_found(mocker: Any, runner: CliRunner, caplog: Any) -> None:
+    """Test the extract_tables command when no source tables are found in the SQL files.
+
+    Args:
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        caplog (Any): Pytest fixture to capture logs.
+    """
+    mocker.patch(
+        'my_package.cli.extract_tables.extract_source_tables',
+        return_value=[]
+    )
+
+    sql_files = ['file1.sql']
+    args = []
+    for sql_file in sql_files:
+        args.extend(['--sql-file', sql_file])
+
+    with mocker.patch('sys.exit') as mock_sys_exit:
+        result = runner.invoke(extract_tables, args)
+        assert result.exit_code == 1
+        assert f"No source tables were found in {[Path(f) for f in sql_files]}" in caplog.text
+        mock_sys_exit.assert_called_once_with(1)
+
+def test_extract_tables_with_invalid_module_name(mocker: Any, runner: CliRunner, caplog: Any) -> None:
+    """Test the extract_tables command with invalid module names.
+
+    Args:
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        caplog (Any): Pytest fixture to capture logs.
+    """
+    mocker.patch(
+        'my_package.cli.extract_tables.get_sql_file_paths',
+        return_value={}
+    )
+
+    args = ['--flib-modules', 'invalid/module']
+
+    with mocker.patch('sys.exit') as mock_sys_exit:
+        result = runner.invoke(extract_tables, args)
+        assert result.exit_code == 1
+        assert "Modules not found: ['invalid/module']" in caplog.text
+        assert "No SQL files found for the specified modules." in caplog.text
+        mock_sys_exit.assert_called_once_with(1)
+
+def test_extract_tables_with_mixed_inputs(mocker: Any, runner: CliRunner, caplog: Any) -> None:
+    """Test the extract_tables command with both SQL files and flib_modules provided.
+
+    Args:
+        mocker (Any): pytest-mock fixture for mocking.
+        runner (CliRunner): Click test runner fixture.
+        caplog (Any): Pytest fixture to capture logs.
+    """
+    mocker.patch(
+        'my_package.cli.extract_tables.get_sql_file_paths',
+        return_value={'module1': '/path/to/module1.sql'}
+    )
+    mocker.patch(
+        'my_package.cli.extract_tables.extract_source_tables',
+        return_value=['table1', 'table2']
+    )
+
+    args = ['--sql-file', 'file1.sql', '--flib-modules', 'module1']
+
+    result = runner.invoke(extract_tables, args)
+    assert result.exit_code == 0
+    assert "Source tables have been found." in caplog.text
+    for table in ['table1', 'table2']:
+        assert f"    - {table}" in result.output
+
