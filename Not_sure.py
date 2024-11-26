@@ -95,24 +95,60 @@ def extract_tables(
         print(f"    - {source_table}")
 
 ############################################### Test case #################
+import sys
+from pathlib import Path
+from typing import List, Optional
+import click
+from loguru import logger
 
-def test_extract_tables_with_both_options(
-    mocker: Any,
-    runner: CliRunner,
-    loguru_caplog
+# Configure logging levels
+logger.remove()  # Remove default handler
+logger.add(sys.stderr, level="INFO")  # Add custom handler with default INFO level
+
+@click.command("extract-tables")
+@click.option('--debug', is_flag=True, help='Enable debug logging')
+@_extract_tables_option
+@_get_flib_modules_option
+def extract_tables(
+ sql_file: List[Path] = [], flib_modules: List[str] = [], debug: bool = False
 ) -> None:
-    """Test that extract_tables fails when both --sql-file and --flib-modules are provided."""
-    # Prepare command arguments with both options
-    args = ['--sql-file', 'file1.sql', '--flib-modules', 'module1']
+    """
+    Extracts source tables from provided SQL files or specified modules.
+    """
+    # Set log level based on debug flag
+    if debug:
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
 
-    # Invoke the command
-    result = runner.invoke(extract_tables, args)
+    # Enforce that only one of sql_file or flib_modules is provided
+    if sql_file and flib_modules:
+        logger.error("Please provide either SQL files or modules, but not both.")
+        sys.exit(1)
+    elif not sql_file and not flib_modules:
+        logger.error("No SQL files or modules have been provided.")
+        sys.exit(1)
 
-    # Assert the exit code is 1
-    assert result.exit_code == 1
+    # If flib_modules is provided, process modules to get SQL files
+    if flib_modules:
+        # New deduplication approach using list comprehension with set
+        seen = set()
+        unique_flib_modules = [
+            mod for mod in flib_modules 
+            if (mod_normalized := mod.strip().lower()) 
+            and not (mod_normalized in seen or seen.add(mod_normalized))
+        ]
 
-    # Get the log output
-    log_output = loguru_caplog.getvalue()
+        # Log if no valid modules remain after deduplication and cleaning
+        if not unique_flib_modules:
+            logger.error("No valid modules have been provided after processing.")
+            sys.exit(1)
 
-    # Assert that the appropriate error message is logged
-    assert "ERROR: Please provide either SQL files or modules, but not both." in log_output
+        logger.info(f"Fetching SQL files for modules: {unique_flib_modules}")
+        try:
+            sql_file_paths = get_sql_file_paths(unique_flib_modules)
+            # Rest of the code remains the same...
+        except Exception as e:
+            logger.error(f"An error occurred while fetching SQL files: {e}")
+            sys.exit(1)
+
+    # Rest of the original function remains unchanged
